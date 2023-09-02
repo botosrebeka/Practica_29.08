@@ -213,11 +213,6 @@ for X, y in train_dataloader:
     # plot_spectogram(y)
     break
 
-#
-# plt.plot(a)
-# plt.show()
-
-
 # for X, y in csd:
 #     print(f"Shape of X: {X.shape}")
 #     print(f"Shape of y: {y.shape}")
