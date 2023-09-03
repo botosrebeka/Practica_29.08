@@ -10,6 +10,8 @@ from torch.utils.data import DataLoader
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
+
+# data (title.wav) -> CSV
 def toCSV(directory, name):
 
     # get a list of all files in the directory
@@ -48,6 +50,8 @@ def toCSV(directory, name):
 # voice_train_data = pd.read_csv('voice_test_dataset.csv')
 # noise_train_data = pd.read_csv('noise_test_dataset.csv')
 
+
+# clasa pentru a crea un custom dataset, care returneaza voice+noise si voice
 class CustomSoundDataset(Dataset):
 
     def __init__(self, voice_annotations_file, noise_annotation_file, voice_dir, noise_dir):
@@ -56,14 +60,17 @@ class CustomSoundDataset(Dataset):
         self.voice_dir = voice_dir
         self.noise_dir = noise_dir
 
+    # lungimea datasetului = nr. de samples = 1000
     def __len__(self):
         # return len(self.voice_annotations)
         return 1000
 
     def __getitem__(self, index):
+        # seed - hogy mindig azokat hasznald
         voice_state = np.random.RandomState(seed=index)
         noise_state = np.random.RandomState(seed=index)
 
+        # random noise + random voice - shuffle
         self.voice_random_index = voice_state.randint(0, len(self.voice_annotations))
         self.noise_random_index = noise_state.randint(0, len(self.noise_annotations))
 
@@ -72,8 +79,10 @@ class CustomSoundDataset(Dataset):
 
         voice, vsr = sf.read(voice_sample_path, dtype='float32', always_2d=True)
         noise, nsr = sf.read(noise_sample_path, dtype='float32', always_2d=True)
+
+        # niste exemple sunt mai lunga decat 480000 sample -> slicing
         voice_plus_noise = voice[0:480000, :] + noise[0:480000, :]
-        a = 1
+
         return voice_plus_noise.T, voice[0:480000, :].T
 
     def _get_voice_sample_path(self, index):
@@ -84,67 +93,78 @@ class CustomSoundDataset(Dataset):
         path = os.path.join(self.noise_dir, self.noise_annotations.iloc[self.noise_random_index, 0])
         return path
 
-def cut(data, section_lenght):
-    lenght = len(data) - section_lenght * len(data)/10
-    _from = random.randrange(0, int(lenght))
-    _to = _from + section_lenght * len(data)/10
-    cutted = data[int(_from):int(_to)]
-    return cutted
 
-def wave_plot(voicenoise, voice):
+# functie pentru a modifica lungimea
+def cut(data, section_length):
+    length = len(data) - section_length * len(data) / 10
+    _from = random.randrange(0, int(length))
+    _to = _from + section_length * len(data) / 10
+    _cut = data[int(_from):int(_to)]
+    return _cut
+
+
+# functie pentru a plota voice+noise si voice pe o singura img
+def wave_plot(voice_noise, voice):
     plt.subplot(2, 1, 1)
-    plt.plot(voicenoise)
+    plt.plot(voice_noise)
     plt.title('Voice + Noise')
     plt.subplot(2, 1, 2)
     plt.plot(voice)
     plt.title('Voice')
     plt.show()
 
+
 def export_mixed_and_voice(index):
-    voicenoise, voice = csd[index]
-    vnstring = str(index) + 'voicenoise.wav'
-    vstring = str(index) + 'voice.wav'
-    sf.write(vnstring, voicenoise, 48000)
-    sf.write(vstring, voice, 48000)
+    voice_noise, voice = csd[index]
+    vn_string = str(index) + 'voice_noise.wav'
+    v_string = str(index) + 'voice.wav'
+    sf.write(vn_string, voice_noise, 48000)
+    sf.write(v_string, voice, 48000)
+
 
 def export(name, data):
     name = name + '.wav'
     sf.write(name, data, 48000)
 
-def transform(x):
+
+# transform stft - Short Time Fourier Transform - time -> frequency
+def transform(signal):
     n_fft = 512
     hop_length = int(n_fft/2)
     win_length = n_fft
-    print(f"Shape before: {x.shape}")
-    x = torch.squeeze(x)
+    print(f"Shape before: {signal.shape}")
+    signal = torch.squeeze(signal)
 
-    spectogram = torch.stft(
-        x,
+    spectrogram = torch.stft(
+        signal,
         n_fft=n_fft,
         hop_length=hop_length,
         win_length=win_length,
         window=torch.hann_window(window_length=win_length),
         return_complex=True
     )
-    plot_spectogram(spectogram)
-    spectogram = torch.view_as_real(spectogram)
-    return spectogram
+    plot_spectrogram(spectrogram)
+    spectrogram = torch.view_as_real(spectrogram)
+    return spectrogram
 
-def inverse(x):
-    x = torch.view_as_complex(x)
+
+# functie pentru inverse STFT
+def inverse(spectrogram):
+    spectrogram = torch.view_as_complex(spectrogram)
     n_fft = 512
     hop_length = int(n_fft / 2)
     win_length = n_fft
 
     reconstructed_waveform = torch.istft(
-    x,
-    n_fft=n_fft,
-    hop_length=hop_length,
-    win_length=win_length,
-    window=torch.hann_window(window_length=win_length),
-    return_complex=False
+        spectrogram,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        win_length=win_length,
+        window=torch.hann_window(window_length=win_length),
+        return_complex=False
     )
     return reconstructed_waveform
+
 
 if __name__ == "__main__":
     voice_annotation_file = "voice_train_dataset.csv"
@@ -165,9 +185,10 @@ if __name__ == "__main__":
 
     # wave_plot(voicenoise, voice)
 
-train_dataloader = DataLoader(csd, batch_size=32, shuffle=True)
+    train_dataloader = DataLoader(csd, batch_size=32, shuffle=True)
 
-def plot_spectogram(data):
+
+def plot_spectrogram(data):
     plt.figure(figsize=(10, 6))
     m_sp = torch.abs(data)
     asd = m_sp.log2().numpy()
@@ -178,39 +199,36 @@ def plot_spectogram(data):
     plt.ylabel("Frequency Bins")
     plt.show()
 
-def eroare(a,b):
+
+def max_error(a, b):
     return torch.max(torch.abs(a-b))
 
+
 def compute_magnitude(complex_signal):
-    a = complex_signal
     magnitude = torch.sqrt(complex_signal[:, :, 0] ** 2 + complex_signal[:, :, 1] ** 2)
     return magnitude
+
 
 for X, y in train_dataloader:
     print(f"Shape of X: {X.shape}")
     print(f"Shape of y: {y.shape}")
 
     before = X[0, :, :]
-    export('inainte', torch.squeeze(before, 0))
+    export('before', torch.squeeze(before, 0))
 
     x = X[0, :, :]
     x = transform(x)
 
     a = compute_magnitude(x)
 
-
     after = inverse(x)
 
-    export('dupa', after)
+    export('after', after)
 
     after = torch.unsqueeze(after, 0)
     print(f"Shape after: {after.shape}")
 
-    print(f"Eroare maxima: {eroare(before, after)}")
-
-
-    # y = transform(y[0, :, :])
-    # plot_spectogram(y)
+    print(f"Max error: {max_error(before, after)}")
     break
 
 # for X, y in csd:
@@ -218,19 +236,8 @@ for X, y in train_dataloader:
 #     print(f"Shape of y: {y.shape}")
 #     break
 
-
-
 # for i in range(5):
 #     m, v = csd[i]
 #     wave_plot(m, v)
-
-    # plt.title(len(cut(voicenoise, 5)))
-    # plt.plot(voicenoise)
-    # plt.plot(cut(voicenoise, 5))
-    # plt.show()
-
-    # plt.plot(voicenoise)
-    # plt.plot(voice)
-    # plt.show()
 
 
