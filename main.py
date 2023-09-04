@@ -7,6 +7,9 @@ import soundfile as sf
 import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data import DataLoader
+import UNet
+import torch.nn as nn
+import torch.optim as optim
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -63,7 +66,7 @@ class CustomSoundDataset(Dataset):
     # lungimea datasetului = nr. de samples = 1000
     def __len__(self):
         # return len(self.voice_annotations)
-        return 1000
+        return 4
 
     def __getitem__(self, index):
         # seed - hogy mindig azokat hasznald
@@ -129,10 +132,10 @@ def export(name, data):
 
 # transform stft - Short Time Fourier Transform - time -> frequency
 def transform(signal):
-    n_fft = 512
+    n_fft = 1024
     hop_length = int(n_fft/2)
     win_length = n_fft
-    print(f"Shape before: {signal.shape}")
+    # print(f"Shape before: {signal.shape}")
     signal = torch.squeeze(signal)
 
     spectrogram = torch.stft(
@@ -143,7 +146,7 @@ def transform(signal):
         window=torch.hann_window(window_length=win_length),
         return_complex=True
     )
-    plot_spectrogram(spectrogram)
+    # plot_spectrogram(spectrogram)
     spectrogram = torch.view_as_real(spectrogram)
     return spectrogram
 
@@ -151,7 +154,7 @@ def transform(signal):
 # functie pentru inverse STFT
 def inverse(spectrogram):
     spectrogram = torch.view_as_complex(spectrogram)
-    n_fft = 512
+    n_fft = 1024
     hop_length = int(n_fft / 2)
     win_length = n_fft
 
@@ -161,31 +164,10 @@ def inverse(spectrogram):
         hop_length=hop_length,
         win_length=win_length,
         window=torch.hann_window(window_length=win_length),
-        return_complex=False
+        return_complex=False,
+        length=480000
     )
     return reconstructed_waveform
-
-
-if __name__ == "__main__":
-    voice_annotation_file = "voice_train_dataset.csv"
-    noise_annotation_file = "noise_train_dataset.csv"
-    voice_dir = "E:/Practica/voice"
-    noise_dir = "E:/Practica/noise"
-
-    csd = CustomSoundDataset(voice_annotation_file, noise_annotation_file, voice_dir, noise_dir)
-
-    print(f"There are {len(csd)} samples in the dataset.")
-
-    # plot un exemplu din dataset
-    # voicenoise, voice = csd[250]
-    # wave_plot(voicenoise.T, voice.T)
-
-    # asd, _ = csd[1]
-    # export('proba', cut(asd, 3))
-
-    # wave_plot(voicenoise, voice)
-
-    train_dataloader = DataLoader(csd, batch_size=32, shuffle=True)
 
 
 def plot_spectrogram(data):
@@ -205,39 +187,106 @@ def max_error(a, b):
 
 
 def compute_magnitude(complex_signal):
-    magnitude = torch.sqrt(complex_signal[:, :, 0] ** 2 + complex_signal[:, :, 1] ** 2)
+    magnitude = torch.sqrt(complex_signal[:, :, :, 0] ** 2 + complex_signal[:, :, :, 1] ** 2)
     return magnitude
 
+# # Get cpu, gpu or mps device for training.
+# device = (
+#     "cuda"
+#     if torch.cuda.is_available()
+#     else "mps"
+#     if torch.backends.mps.is_available()
+#     else "cpu"
+# )
+# print(f"Using {device} device")
 
-for X, y in train_dataloader:
-    print(f"Shape of X: {X.shape}")
-    print(f"Shape of y: {y.shape}")
 
-    before = X[0, :, :]
-    export('before', torch.squeeze(before, 0))
+def train(model, dataloader, loss_fn, optimizer):
+    model.train()
+    for batch, (X, y) in enumerate(dataloader):
+        # X, y = X.to(device), y.to(device)
+        optimizer.zero_grad()
 
-    x = X[0, :, :]
-    x = transform(x)
+        X = transform(X)
+        X = compute_magnitude(X)
+        pred = model(X)
+        pred = torch.squeeze(pred)
 
-    a = compute_magnitude(x)
+        y = transform(y)
+        y = compute_magnitude(y)
 
-    after = inverse(x)
+        loss = loss_fn(pred, y)
 
-    export('after', after)
+        loss.backward()
+        optimizer.step()
 
-    after = torch.unsqueeze(after, 0)
-    print(f"Shape after: {after.shape}")
+        running_los += loss.item()
 
-    print(f"Max error: {max_error(before, after)}")
-    break
+        average_loss = running_loss/ len(dataloader)
+        print(f"Epoch [{epoch + 1}/{num_epochs}] Loss: {average_loss:.4f}")
+    print("done")
 
-# for X, y in csd:
+
+if __name__ == "__main__":
+    voice_annotation_file = "voice_train_dataset.csv"
+    noise_annotation_file = "noise_train_dataset.csv"
+    voice_dir = "E:/Practica/voice"
+    noise_dir = "E:/Practica/noise"
+
+    csd = CustomSoundDataset(voice_annotation_file, noise_annotation_file, voice_dir, noise_dir)
+
+    print(f"There are {len(csd)} samples in the dataset.")
+
+    train_dataloader = DataLoader(csd, batch_size=32, shuffle=True)
+
+    for X, y in train_dataloader:
+        print(f"Shape of X: {X.shape}")
+        print(f"Shape of y: {y.shape}")
+        break
+
+    # model = UNet.UNetModel().to(device)
+    model = UNet.UNetModel()
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    epochs = 2
+
+    for t in range(epochs):
+        print(f"Epoch {t + 1}\n-------------------------------")
+        train(model, train_dataloader, loss_fn, optimizer)
+    print("done")
+
+# for X, y in train_dataloader:
 #     print(f"Shape of X: {X.shape}")
 #     print(f"Shape of y: {y.shape}")
+#
+#     before = X[0, :, :]
+#     export('before', torch.squeeze(before, 0))
+#
+#     x = X[0, :, :]
+#     x = transform(x)
+#
+#     a = compute_magnitude(x)
+#
+#     after = inverse(x)
+#
+#     export('after', after)
+#
+#     after = torch.unsqueeze(after, 0)
+#     print(f"Shape after: {after.shape}")
+#
+#     print(f"Max error: {max_error(before, after)}")
 #     break
 
 # for i in range(5):
 #     m, v = csd[i]
 #     wave_plot(m, v)
 
-
+# model = UNet.UNetModel()
+# batch = next(iter(train_dataloader))
+# x, y = batch
+# x = transform(x)
+# magn = compute_magnitude(x)
+# magn.to(UNet.device)
+#
+#
+# model(magn)
