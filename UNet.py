@@ -44,9 +44,9 @@ class UNetModel(nn.Module):
         self.output = nn.Sigmoid()
 
     def forward(self, x):
-        B, F, T = x.shape
-        x = x.view((B, 1, F, T))
-        x = torch.nn.functional.pad(x, (22, 0), 'constant', 0)
+        # B, F, T = x.shape
+        # x = x.view((B, 1, F, T))
+        x = torch.nn.functional.pad(x, (0, 22), 'constant', 0)
         x = x[:, :, :-1, :]
 
         x1 = self.s1(x)
@@ -78,14 +78,14 @@ class UNetModel(nn.Module):
 
         x = x[:, :, :, :-22]
 
-        x = torch.nn.functional.pad(x, (1, 0, 1, 0), 'constant', 0)
-
-        # x = x.view((B, F, T))
+        x = torch.nn.functional.pad(x, (0, 0, 0, 1), 'replicate')
 
         return x
 
-# 
+
 # model = UNetModel()
 # 
-# a = torch.randn(4, 513, 938)
+# a = torch.randn(1, 513, 938)
+# # x = torch.nn.functional.pad(a,  (0, 0, 0, 1), 'constant', 0)
+# # a = 1
 # model(a)

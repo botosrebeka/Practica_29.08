@@ -11,6 +11,7 @@ import UNet
 import torch.nn as nn
 import torch.optim as optim
 
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 
@@ -66,7 +67,7 @@ class CustomSoundDataset(Dataset):
     # lungimea datasetului = nr. de samples = 1000
     def __len__(self):
         # return len(self.voice_annotations)
-        return 4
+        return 30
 
     def __getitem__(self, index):
         # seed - hogy mindig azokat hasznald
@@ -148,6 +149,7 @@ def transform(signal):
     )
     # plot_spectrogram(spectrogram)
     spectrogram = torch.view_as_real(spectrogram)
+    spectrogram = torch.unsqueeze(spectrogram, 1)
     return spectrogram
 
 
@@ -187,7 +189,9 @@ def max_error(a, b):
 
 
 def compute_magnitude(complex_signal):
-    magnitude = torch.sqrt(complex_signal[:, :, :, 0] ** 2 + complex_signal[:, :, :, 1] ** 2)
+    magnitude = torch.sqrt(complex_signal[:, :, :, :, 0] ** 2 + complex_signal[:, :, :, :, 1] ** 2)
+    # magnitude = torch.sqrt(complex_signal[:, :, 0] ** 2 + complex_signal[:, :, 1] ** 2)
+
     return magnitude
 
 # # Get cpu, gpu or mps device for training.
@@ -203,33 +207,63 @@ def compute_magnitude(complex_signal):
 
 def train(model, dataloader, loss_fn, optimizer):
     model.train()
+    i = 0
     for batch, (X, y) in enumerate(dataloader):
-        # X, y = X.to(device), y.to(device)
         optimizer.zero_grad()
 
+        i += 1
+        # inf = str(i) + 'inp.wav'
+        ouf = str(i) + 'outp.wav'
+
+        # asd = torch.squeeze(X)
+        # asd = asd[0, :]
+        # sf.write(inf, asd, 48000)
+
         X = transform(X)
+        inp = X
         X = compute_magnitude(X)
-        pred = model(X)
-        pred = torch.squeeze(pred)
+
+        masc = model(X)
+        masc = torch.unsqueeze(masc, -1)
+
+        pred = inp * masc
+        with torch.no_grad():
+            out = torch.squeeze(pred)
+
+            out = out[0, :, :, :]
+            invers = inverse(out)
+
+            sf.write(ouf, invers, 48000)
 
         y = transform(y)
-        y = compute_magnitude(y)
 
         loss = loss_fn(pred, y)
+        print(f'loss:{loss.item()}')
 
         loss.backward()
         optimizer.step()
-
-        running_los += loss.item()
-
-        average_loss = running_loss/ len(dataloader)
-        print(f"Epoch [{epoch + 1}/{num_epochs}] Loss: {average_loss:.4f}")
-    print("done")
+    print("Epoch done!")
 
 
 if __name__ == "__main__":
-    voice_annotation_file = "voice_train_dataset.csv"
-    noise_annotation_file = "noise_train_dataset.csv"
+    # voice_annotation_file = "voice_train_dataset.csv"
+    # noise_annotation_file = "noise_train_dataset.csv"
+    # voice_dir = "E:/Practica/voice"
+    # noise_dir = "E:/Practica/noise"
+    #
+    # csd = CustomSoundDataset(voice_annotation_file, noise_annotation_file, voice_dir, noise_dir)
+    #
+    # print(f"There are {len(csd)} samples in the dataset.")
+    #
+    # train_dataloader = DataLoader(csd, batch_size=4, shuffle=True)
+    #
+    # for X, y in train_dataloader:
+    #     print(f"Shape of X: {X.shape}")
+    #     print(f"Shape of y: {y.shape}")
+    #     break
+
+    voice_annotation_file = "voice.csv"
+    noise_annotation_file = "noise.csv"
     voice_dir = "E:/Practica/voice"
     noise_dir = "E:/Practica/noise"
 
@@ -237,7 +271,7 @@ if __name__ == "__main__":
 
     print(f"There are {len(csd)} samples in the dataset.")
 
-    train_dataloader = DataLoader(csd, batch_size=32, shuffle=True)
+    train_dataloader = DataLoader(csd, batch_size=4, shuffle=True)
 
     for X, y in train_dataloader:
         print(f"Shape of X: {X.shape}")
@@ -246,34 +280,37 @@ if __name__ == "__main__":
 
     # model = UNet.UNetModel().to(device)
     model = UNet.UNetModel()
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    epochs = 2
+    epochs = 5
 
     for t in range(epochs):
         print(f"Epoch {t + 1}\n-------------------------------")
         train(model, train_dataloader, loss_fn, optimizer)
-    print("done")
+    print("Train done!")
+
+    torch.save(model.state_dict(), "model1.pth")
+    print("Saved PyTorch Model State to model1.pth")
 
 # for X, y in train_dataloader:
 #     print(f"Shape of X: {X.shape}")
-#     print(f"Shape of y: {y.shape}")
-#
+#     print(f"Shape of y: {y.shape}   v
+# 
 #     before = X[0, :, :]
 #     export('before', torch.squeeze(before, 0))
-#
+# 
 #     x = X[0, :, :]
 #     x = transform(x)
-#
+# 
 #     a = compute_magnitude(x)
-#
+# 
 #     after = inverse(x)
-#
+# 
 #     export('after', after)
-#
+# 
 #     after = torch.unsqueeze(after, 0)
 #     print(f"Shape after: {after.shape}")
-#
+# 
 #     print(f"Max error: {max_error(before, after)}")
 #     break
 
