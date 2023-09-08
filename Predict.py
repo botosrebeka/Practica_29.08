@@ -6,7 +6,7 @@ import soundfile as sf
 import numpy as np
 
 model = UNet.UNetModel()
-model.load_state_dict(torch.load("model_51.pth"))
+model.load_state_dict(torch.load("model.pth"))
 
 voice_annotation_file = "voice.csv"
 noise_annotation_file = "noise.csv"
@@ -28,7 +28,7 @@ for X, y in train_dataloader:
     with torch.no_grad():
         asd = torch.squeeze(X, 1)
         asd = asd[0, :]
-        sf.write('51_predict_input.wav', asd, 48000)
+        sf.write('predict_input.wav', asd, 48000)
 
         X = main.transform(X)
         inp = X
@@ -43,14 +43,14 @@ for X, y in train_dataloader:
         zgomot = torch.squeeze(zgomot, 1)
         zgomot = zgomot[0, :, :, :]
         inv = main.inverse(zgomot)
-        sf.write('51_zgomot.wav', inv, 48000)
+        sf.write('zgomot.wav', inv, 48000)
 
         pred = torch.squeeze(pred, 1)
 
         pred = pred[0, :, :, :]
         invers = main.inverse(pred)
 
-        sf.write('51_predict_output.wav', invers, 48000)
+        sf.write('predict_output.wav', invers, 48000)
 
     break
 
